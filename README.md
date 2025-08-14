@@ -9,9 +9,7 @@ Use it inside a **DHTML panel** or render it onto a **3D2D surface** with **GLua
   <a href="https://nodejs.org/">
     <img alt="Node 18+" src="https://img.shields.io/badge/Node-18%2B-informational?logo=node.js">
   </a>
-  <img alt="Garry's Mod client" src="https://img.shields.io/badge/Garry's%20Mod-client-blue">
-  <img alt="Privacy local-first" src="https://img.shields.io/badge/Privacy-local--first-success">
-  <img alt="CEF getUserMedia" src="https://img.shields.io/badge/CEF-getUserMedia-lightgrey">
+  <img alt="Garry's Mod client" src="[https://img.shields.io/badge/Garry's%20Mod-client-blue](https://store.steampowered.com/app/4000/Garrys_Mod/)">
 </p>
 
 [Getting Started](#-quick-start) •
