@@ -11,7 +11,7 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
-// ----- Секретный код админа -----
+
 const ADMIN_CODE = (process.env.GSIMS_ADMIN_CODE && String(process.env.GSIMS_ADMIN_CODE)) ||
                    crypto.randomBytes(16).toString('hex');
 
@@ -47,7 +47,6 @@ function pushFrame(sid, buf){
   }
 }
 
-// ======= Проверка токена (детерминированная) =======
 // Токен = sha256( SHARED_SECRET .. ":" .. SID64 ) в HEX  — должен совпадать с тем, что выдал GLua.
 function tokenForSidHex(sid){
   return crypto.createHash('sha256').update(`${SHARED_SECRET}:${sid}`).digest('hex');
@@ -59,7 +58,6 @@ function safeEqual(a, b){
   return crypto.timingSafeEqual(ab, bb);
 }
 
-// ---------- MJPEG stream ----------
 app.get('/mjpg/:sid', (req, res) => {
   const sid = String(req.params.sid||'0');
   corsNoCache(res);
@@ -78,7 +76,6 @@ app.get('/mjpg/:sid', (req, res) => {
   }
 });
 
-// ---------- Snapshot endpoint ----------
 app.get('/jpg/:sid', (req, res) => {
   const sid = String(req.params.sid||'0');
   corsNoCache(res);
@@ -89,7 +86,6 @@ app.get('/jpg/:sid', (req, res) => {
   res.end(buf);
 });
 
-// ---------- Статус ----------
 app.get('/status', (req,res)=>{
   corsNoCache(res);
   res.json({
@@ -100,7 +96,6 @@ app.get('/status', (req,res)=>{
   });
 });
 
-// ---------- Загрузчик (RU, центр, зум, выбор камеры) ----------
 app.get('/uploader', (req, res) => {
   const q = req.query||{};
   const sid = (q.sid||'').toString();
@@ -276,7 +271,7 @@ populateDevices().catch(()=>{});
 </script>`);
 });
 
-// ---------- Админ-панель ----------
+// ---------- adm panel ----------
 function isAdmin(req){
   const codeQ = (req.query && req.query.code) ? String(req.query.code) : '';
   const codeH = req.headers['x-gsims-code'] ? String(req.headers['x-gsims-code']) : '';
@@ -348,7 +343,7 @@ setInterval(refresh, 1500); refresh();
 </script>`);
 });
 
-// Отключение загрузчика
+
 app.post('/admin/disconnect/:sid', (req,res)=>{
   if (!isAdmin(req)) return res.status(404).send('Not found');
   const sid = String(req.params.sid||'');
@@ -360,7 +355,7 @@ app.post('/admin/disconnect/:sid', (req,res)=>{
   res.json({ok:true});
 });
 
-// ---------- WebSocket upgrade с проверкой токена ----------
+
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname !== '/ws') { socket.destroy(); return; }
@@ -368,7 +363,7 @@ server.on('upgrade', (req, socket, head) => {
   const token = String(url.searchParams.get('token')||'');
 
   if (!sid || !token || !safeEqual(tokenForSidHex(sid), token)) {
-    socket.destroy(); // недействительный токен
+    socket.destroy();
     return;
   }
   socket.setNoDelay(true);
@@ -378,7 +373,7 @@ server.on('upgrade', (req, socket, head) => {
   });
 });
 
-// ---------- WS события ----------
+
 wss.on('connection', ws => {
   const sid = String(ws.sid||'0');
   if (!uploaders.has(sid)) uploaders.set(sid, new Set());
