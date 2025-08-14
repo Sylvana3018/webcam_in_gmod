@@ -51,7 +51,7 @@ Use it inside a **DHTML panel** or render it onto a **3D2D surface** with **GLua
 
 ### 1) Clone and install
 ```bash
-git clone https://github.com/Sylvana3018/webcam_in_gmod.git
+git clone https://github.com/maryblackfild/webcam_in_gmod.git
 cd webcam_in_gmod
 npm install
 ```
