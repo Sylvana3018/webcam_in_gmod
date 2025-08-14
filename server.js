@@ -1,20 +1,10 @@
-// gSims — MJPEG ретранслятор
-// -----------------------------------------------------------------------------------------------
-// Требования: node >= 16
-// Запуск: node server.js
-// Переменные окружения (необязательно):
-//   PORT=4873
-//   GSIMS_ADMIN_CODE=<секрет для /admin>        // если не задан — сгенерируется рандомно
-//   GSIMS_SHARED_SECRET=<общий секрет с GLua>   // должен совпадать с ConVar gsims_cam_shared_secret на сервере GMod
-//   GSIMS_TOKEN_MAX_AGE_MS=600000               // время жизни токена, по умолчанию 10 минут
-// -----------------------------------------------------------------------------------------------
+
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const http = require('http');
 const crypto = require('crypto');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4873;
-const TOKEN_MAX_AGE_MS = parseInt(process.env.GSIMS_TOKEN_MAX_AGE_MS || '600000', 10);
 const SHARED_SECRET = String(process.env.GSIMS_SHARED_SECRET || 'devsecret-change-me');
 
 const app = express();
@@ -57,12 +47,10 @@ function pushFrame(sid, buf){
   }
 }
 
-// ======= Проверка токена =======
-function calcTokenHex(sid, ts, nonce){
-  // Должно совпадать с Lua: sha256(secret .. ":" .. sid .. ":" .. ts .. ":" .. nonce) в HEX
-  return crypto.createHash('sha256')
-    .update(`${SHARED_SECRET}:${sid}:${ts}:${nonce}`)
-    .digest('hex');
+// ======= Проверка токена (детерминированная) =======
+// Токен = sha256( SHARED_SECRET .. ":" .. SID64 ) в HEX  — должен совпадать с тем, что выдал GLua.
+function tokenForSidHex(sid){
+  return crypto.createHash('sha256').update(`${SHARED_SECRET}:${sid}`).digest('hex');
 }
 function safeEqual(a, b){
   const ab = Buffer.from(String(a), 'utf8');
@@ -70,17 +58,8 @@ function safeEqual(a, b){
   if (ab.length !== bb.length) return false;
   return crypto.timingSafeEqual(ab, bb);
 }
-function verifyTokenParams({sid, ts, nonce, token}){
-  if (!sid || !ts || !nonce || !token) return false;
-  const now = Date.now();
-  const tsNum = Number(ts);
-  if (!Number.isFinite(tsNum)) return false;
-  if (Math.abs(now - tsNum) > TOKEN_MAX_AGE_MS) return false;
-  const expect = calcTokenHex(sid, ts, nonce);
-  return safeEqual(expect, token);
-}
 
-// ---------- MJPEG stream (legacy/совместимо) ----------
+// ---------- MJPEG stream ----------
 app.get('/mjpg/:sid', (req, res) => {
   const sid = String(req.params.sid||'0');
   corsNoCache(res);
@@ -99,7 +78,7 @@ app.get('/mjpg/:sid', (req, res) => {
   }
 });
 
-// ---------- Snapshot endpoint (опрашивается 3D2D) ----------
+// ---------- Snapshot endpoint ----------
 app.get('/jpg/:sid', (req, res) => {
   const sid = String(req.params.sid||'0');
   corsNoCache(res);
@@ -110,7 +89,7 @@ app.get('/jpg/:sid', (req, res) => {
   res.end(buf);
 });
 
-// ---------- Status ----------
+// ---------- Статус ----------
 app.get('/status', (req,res)=>{
   corsNoCache(res);
   res.json({
@@ -121,15 +100,13 @@ app.get('/status', (req,res)=>{
   });
 });
 
-// ---------- Минималистичный загрузчик (RU, центр, зум, выбор камеры) ----------
+// ---------- Загрузчик (RU, центр, зум, выбор камеры) ----------
 app.get('/uploader', (req, res) => {
   const q = req.query||{};
   const sid = (q.sid||'').toString();
   const fps = Math.max(1, Math.min(30, parseInt(q.fps||'8',10)));
   const quality = Math.max(0.1, Math.min(1.0, parseFloat(q.quality||'0.6')));
   const token = (q.token||'').toString();
-  const ts    = (q.ts||'').toString();
-  const nonce = (q.nonce||q.n||'').toString();
 
   corsNoCache(res);
   res.send(`<!doctype html><meta charset="utf-8">
@@ -162,6 +139,7 @@ video,canvas{width:100%;height:100%;object-fit:cover;transform:scale(1.15)}
 #log{white-space:pre-wrap;max-height:220px;overflow:auto;border:1px dashed var(--line);padding:10px;border-radius:12px;background:#0f1013}
 .footer{opacity:.7;text-align:center;padding:12px 0 22px;font-size:12px;color:var(--muted)}
 .bad{color:#ff9aa2}
+.good{color:#8be9fd}
 </style>
 
 <div class="header">
@@ -204,24 +182,16 @@ let ws,timer,v,c,ctx,curStream;
 
 const sidInit   = ${JSON.stringify(sid)};
 const tokenInit = ${JSON.stringify(token)};
-const tsInit    = ${JSON.stringify(ts)};
-const nonceInit = ${JSON.stringify(nonce)};
 
-function qs(k){ return new URLSearchParams(location.search).get(k)||''; }
 function log(){ const s=[...arguments].join(" "); console.log(s); const el=document.getElementById('log'); el.textContent+=s+"\\n"; el.scrollTop=el.scrollHeight; }
 function setEnabled(b){ document.getElementById('start').disabled=!b; document.getElementById('stop').disabled=b; }
 
-function tokenOk(){
-  return Boolean(sidInit && tokenInit && tsInit && nonceInit);
-}
-
 function tokInfo(){
   const el = document.getElementById('tokInfo');
-  if (!tokenOk()) {
-    el.innerHTML = '<span class="bad">В ссылке отсутствует токен доступа. Генерируйте ссылку из меню в игре.</span>';
+  if (!sidInit || !tokenInit) {
+    el.innerHTML = '<span class="bad">В ссылке отсутствует токен или SID. Сгенерируйте ссылку в меню игры.</span>';
   } else {
-    const ttl = ${TOKEN_MAX_AGE_MS}/60000;
-    el.textContent = 'Токен присутствует. Срок действия: ~' + ttl + ' мин.';
+    el.innerHTML = '<span class="good">Токен принят. Подключение возможно.</span>';
   }
 }
 
@@ -261,7 +231,7 @@ async function start(){
   const fps = Math.max(1,Math.min(30,parseInt(document.getElementById('fps').value||'8')));
   const q   = Math.max(0.1,Math.min(1.0,parseFloat(document.getElementById('q').value||'0.6')));
   if(!sid){ alert('Введите SteamID64'); return; }
-  if(!tokenOk()){ alert('Отсутствует токен доступа. Сгенерируйте ссылку из меню в игре.'); return; }
+  if(!tokenInit){ alert('Отсутствует токен. Сгенерируйте ссылку из меню в игре.'); return; }
 
   v=document.getElementById('v');
   const devId = document.getElementById('devsel').value;
@@ -277,10 +247,9 @@ async function start(){
 
   c=document.createElement('canvas'); c.width=256; c.height=256; ctx=c.getContext('2d',{alpha:false,desynchronized:true});
   const proto=location.protocol==='https:'?'wss':'ws';
-  const wsURL=proto+'://'+location.host+'/ws?sid='+encodeURIComponent(sid)
-    +'&token='+encodeURIComponent(tokenInit)
-    +'&ts='+encodeURIComponent(tsInit)
-    +'&nonce='+encodeURIComponent(nonceInit);
+  const wsURL=proto+'://'+location.host+'/ws'
+    + '?sid='   + encodeURIComponent(sid)
+    + '&token=' + encodeURIComponent(tokenInit);
 
   try{
     ws=new WebSocket(wsURL); ws.binaryType='arraybuffer';
@@ -307,7 +276,7 @@ populateDevices().catch(()=>{});
 </script>`);
 });
 
-// ---------- Админ-панель (по коду) ----------
+// ---------- Админ-панель ----------
 function isAdmin(req){
   const codeQ = (req.query && req.query.code) ? String(req.query.code) : '';
   const codeH = req.headers['x-gsims-code'] ? String(req.headers['x-gsims-code']) : '';
@@ -379,7 +348,7 @@ setInterval(refresh, 1500); refresh();
 </script>`);
 });
 
-// Отключение загрузчика (секрет)
+// Отключение загрузчика
 app.post('/admin/disconnect/:sid', (req,res)=>{
   if (!isAdmin(req)) return res.status(404).send('Not found');
   const sid = String(req.params.sid||'');
@@ -391,17 +360,15 @@ app.post('/admin/disconnect/:sid', (req,res)=>{
   res.json({ok:true});
 });
 
-// ---------- WebSocket upgrade c проверкой токена ----------
+// ---------- WebSocket upgrade с проверкой токена ----------
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname !== '/ws') { socket.destroy(); return; }
   const sid   = String(url.searchParams.get('sid')||'');
   const token = String(url.searchParams.get('token')||'');
-  const ts    = String(url.searchParams.get('ts')||'');
-  const nonce = String(url.searchParams.get('nonce')||url.searchParams.get('n')||'');
 
-  if (!verifyTokenParams({sid, ts, nonce, token})) {
-    socket.destroy(); // неверный/просроченный токен
+  if (!sid || !token || !safeEqual(tokenForSidHex(sid), token)) {
+    socket.destroy(); // недействительный токен
     return;
   }
   socket.setNoDelay(true);
