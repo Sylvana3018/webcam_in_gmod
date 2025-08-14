@@ -123,6 +123,4 @@ Then (if your `server.js` supports it) run with HTTPS env flags, or adapt `serve
 
 ## 🤝 Contributing
 
-PRs and issues are welcome.  
-Please avoid **renaming existing functions/hooks** in GLua examples unless it’s part of a clearly scoped change.  
-Keep code style consistent and add comments for anything non‑obvious.
+PRs and issues are welcome. (keeplove)
